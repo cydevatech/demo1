@@ -71,12 +71,10 @@ _flutter.loader = null;
      * @param {String} policyName the policy name (optional)
      */
     constructor(validPatterns, policyName = "flutter-js") {
-      const patterns = validPatterns || [
-        /\.js$/,
-      ];
+      const patterns = validPatterns || [/\.js$/];
       if (window.trustedTypes) {
         this.policy = trustedTypes.createPolicy(policyName, {
-          createScriptURL: function(url) {
+          createScriptURL: function (url) {
             const parsed = new URL(url, window.location);
             const file = parsed.pathname.split("/").pop();
             const matches = patterns.some((pattern) => pattern.test(file));
@@ -85,8 +83,12 @@ _flutter.loader = null;
             }
             console.error(
               "URL rejected by TrustedTypes policy",
-              policyName, ":", url, "(download prevented)");
-          }
+              policyName,
+              ":",
+              url,
+              "(download prevented)"
+            );
+          },
         });
       }
     }
@@ -123,12 +125,11 @@ _flutter.loader = null;
       if (!("serviceWorker" in navigator)) {
         let errorMessage = "Service Worker API unavailable.";
         if (!window.isSecureContext) {
-          errorMessage += "\nThe current context is NOT secure."
-          errorMessage += "\nRead more: https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts";
+          errorMessage += "\nThe current context is NOT secure.";
+          errorMessage +=
+            "\nRead more: https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts";
         }
-        return Promise.reject(
-          new Error(errorMessage)
-        );
+        return Promise.reject(new Error(errorMessage));
       }
       const {
         serviceWorkerVersion,
@@ -144,7 +145,7 @@ _flutter.loader = null;
 
       const serviceWorkerActivation = navigator.serviceWorker
         .register(url)
-        .then((serviceWorkerRegistration) => this._getNewServiceWorker(serviceWorkerRegistration, serviceWorkerVersion))
+        .then(this._getNewServiceWorker)
         .then(this._waitForServiceWorkerActivation);
 
       // Timeout race promise
@@ -156,47 +157,53 @@ _flutter.loader = null;
     }
 
     /**
-     * Returns the latest service worker for the given `serviceWorkerRegistration`.
+     * Returns the latest service worker for the given `serviceWorkerRegistrationPromise`.
      *
      * This might return the current service worker, if there's no new service worker
      * awaiting to be installed/updated.
      *
-     * @param {ServiceWorkerRegistration} serviceWorkerRegistration
-     * @param {String} serviceWorkerVersion
+     * @param {Promise<ServiceWorkerRegistration>} serviceWorkerRegistrationPromise
      * @returns {Promise<ServiceWorker>}
      */
-    async _getNewServiceWorker(serviceWorkerRegistration, serviceWorkerVersion) {
-      if (!serviceWorkerRegistration.active && (serviceWorkerRegistration.installing || serviceWorkerRegistration.waiting)) {
+    async _getNewServiceWorker(serviceWorkerRegistrationPromise) {
+      const reg = await serviceWorkerRegistrationPromise;
+
+      if (!reg.active && (reg.installing || reg.waiting)) {
         // No active web worker and we have installed or are installing
         // one for the first time. Simply wait for it to activate.
         console.debug("Installing/Activating first service worker.");
-        return serviceWorkerRegistration.installing || serviceWorkerRegistration.waiting;
-      } else if (!serviceWorkerRegistration.active.scriptURL.endsWith(serviceWorkerVersion)) {
+        return reg.installing || reg.waiting;
+      } else if (!reg.active.scriptURL.endsWith(serviceWorkerVersion)) {
         // When the app updates the serviceWorkerVersion changes, so we
         // need to ask the service worker to update.
-        const newRegistration = await serviceWorkerRegistration.update();
-        console.debug("Updating service worker.");
-        return newRegistration.installing || newRegistration.waiting || newRegistration.active;
+        return reg.update().then((newReg) => {
+          console.debug("Updating service worker.");
+          return newReg.installing || newReg.waiting || newReg.active;
+        });
       } else {
         console.debug("Loading from existing service worker.");
-        return serviceWorkerRegistration.active;
+        return reg.active;
       }
     }
 
     /**
-     * Returns a Promise that resolves when the `serviceWorker` changes its
+     * Returns a Promise that resolves when the `latestServiceWorker` changes its
      * state to "activated".
      *
-     * @param {ServiceWorker} serviceWorker
+     * @param {Promise<ServiceWorker>} latestServiceWorkerPromise
      * @returns {Promise<void>}
      */
-    async _waitForServiceWorkerActivation(serviceWorker) {
+    async _waitForServiceWorkerActivation(latestServiceWorkerPromise) {
+      const serviceWorker = await latestServiceWorkerPromise;
+
       if (!serviceWorker || serviceWorker.state == "activated") {
         if (!serviceWorker) {
-          throw new Error("Cannot activate a null service worker!");
+          return Promise.reject(
+            new Error("Cannot activate a null service worker!")
+          );
         } else {
           console.debug("Service worker already active.");
-          return;
+          return Promise.resolve();
         }
       }
       return new Promise((resolve, _) => {
@@ -357,7 +364,7 @@ _flutter.loader = null;
       // (and dynamically imported from a module if not present).
       const serviceWorkerLoader = new FlutterServiceWorkerLoader();
       serviceWorkerLoader.setTrustedTypesPolicy(flutterTT.policy);
-      await serviceWorkerLoader.loadServiceWorker(serviceWorker).catch(e => {
+      await serviceWorkerLoader.loadServiceWorker(serviceWorker).catch((e) => {
         // Regardless of what happens with the injection of the SW, the show must go on
         console.warn("Exception while loading service worker:", e);
       });
